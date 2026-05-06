@@ -301,14 +301,14 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
     /// <summary>
     /// Gets or sets a value that determines how manipulation input influences scrolling behavior on the horizontal axis.
     /// </summary>
-    [GeneratedStyledProperty]
-    public ScrollMode HorizontalScrollMode { get; set; } = ScrollMode.Auto;
+    [GeneratedStyledProperty(ScrollMode.Auto)]
+    public partial ScrollMode HorizontalScrollMode { get; set; }
 
     /// <summary>
     /// Gets or sets a value that determines how manipulation input influences scrolling behavior on the vertical axis.
     /// </summary>
-    [GeneratedStyledProperty]
-    public ScrollMode VerticalScrollMode { get; set; } = ScrollMode.Auto;
+    [GeneratedStyledProperty(ScrollMode.Auto)]
+    public partial ScrollMode VerticalScrollMode { get; set; }
 
     /// <inheritdoc/>
     Control? IScrollAnchorProvider.CurrentAnchor
@@ -757,15 +757,25 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
         }
     }
 
-    private bool GetComputedScrollMode(Size scaledExtent)
+    private void GetComputedScrollMode(Size scaledExtent)
     {
         if (IsZoomEnabled)
         {
-            
+            SetValue(CanHorizontallyScrollProperty, true);
+            SetValue(CanVerticallyScrollProperty, true);
         }
-        var scrollableWidth = Math.Max(0, scaledExtent.Width - Viewport.Width);
-        var scrollHeight = Math.Max(0, scaledExtent.Height - Viewport.Height);
-        
+        var scrollableWidth = Math.Max(0, Child.DesiredSize.Width - Viewport.Width);
+        var scrollHeight = Math.Max(0, Child.DesiredSize.Height - Viewport.Height);
+        if(HorizontalScrollMode == ScrollMode.Enabled
+            || (HorizontalScrollMode == ScrollMode.Auto && scrollableWidth > 0))
+        {
+            SetValue(CanHorizontallyScrollProperty, true);
+        }
+        if(VerticalScrollMode == ScrollMode.Enabled
+            || (VerticalScrollMode == ScrollMode.Auto && scrollHeight > 0))
+        {
+            SetValue(CanVerticallyScrollProperty, true);
+        }
     }
 
     partial void OnPropertyChangedOverride(AvaloniaPropertyChangedEventArgs change)
@@ -1262,7 +1272,7 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
 
         var range = scrollableArea.MaxPosition - scrollableArea.MinPosition;
 
-        GetComputedScrollMode(scrollableArea.ScaledExtent, true);
+        GetComputedScrollMode(scrollableArea.ScaledExtent);
 
         _interactionSource.PositionXSourceMode = MathUtilities.IsZero(range.X) && !CanHorizontallyScroll
             ? InteractionSourceMode.Disabled

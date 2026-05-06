@@ -38,14 +38,14 @@ public partial class ScrollView : ScrollViewer
     /// <summary>
     /// Gets or sets a value that determines how manipulation input influences scrolling behavior on the horizontal axis.
     /// </summary>
-    [GeneratedStyledProperty]
-    public ScrollMode HorizontalScrollMode { get; set; } = ScrollMode.Auto;
+    [GeneratedStyledProperty(ScrollMode.Auto)]
+    public partial ScrollMode HorizontalScrollMode { get; set; }
 
     /// <summary>
     /// Gets or sets a value that determines how manipulation input influences scrolling behavior on the vertical axis.
     /// </summary>
-    [GeneratedStyledProperty]
-    public ScrollMode VerticalScrollMode { get; set; } = ScrollMode.Auto;
+    [GeneratedStyledProperty(ScrollMode.Auto)]
+    public partial ScrollMode VerticalScrollMode { get; set; }
 
     public void ZoomTo(double zoomFactor, bool isAnimated = true)
     {
