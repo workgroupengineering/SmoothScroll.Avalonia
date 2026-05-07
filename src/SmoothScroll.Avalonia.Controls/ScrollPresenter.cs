@@ -694,6 +694,7 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
             _isAnchorElementDirty = true;
 
             UpdateScrollableAreaForScale(ZoomFactor);
+            SynchronizeCompositionVisualBeforeFirstAnimation();
         }
         finally
         {
@@ -1471,23 +1472,55 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
             return;
         }
 
-        var scale = GetScrollScale();
-        var translation = GetScrollTranslation(compositionVisual);
+        SynchronizeCompositionVisual(
+            compositionVisual,
+            _interactionTracker.Position,
+            _interactionTracker.Scale);
+    }
 
-        compositionVisual.Scale = scale;
+    private void SynchronizeCompositionVisualBeforeFirstAnimation()
+    {
+        if (_animationGroup is not null || Child is null || !Child.IsAttachedToVisualTree())
+        {
+            return;
+        }
+
+        var compositionVisual = ElementComposition.GetElementVisual(Child);
+        if (compositionVisual is null)
+        {
+            return;
+        }
+
+        var position = _interactionTracker?.Position ?? new Vector3D(Offset.X, Offset.Y, 0);
+        var scale = _interactionTracker?.Scale ?? ZoomFactor;
+        SynchronizeCompositionVisual(compositionVisual, position, scale);
+    }
+
+    private void SynchronizeCompositionVisual(
+        CompositionVisual compositionVisual,
+        Vector3D position,
+        double scale)
+    {
+        if (Child is null)
+        {
+            return;
+        }
+
+        var visualScale = GetScrollScale(scale);
+        var translation = GetScrollTranslation(compositionVisual, position);
+
+        compositionVisual.Scale = visualScale;
         compositionVisual.Translation = translation;
     }
 
-    private Vector3D GetScrollScale()
+    private static Vector3D GetScrollScale(double scale)
     {
-        var scale = _interactionTracker!.Scale;
         return new Vector3D(scale, scale, scale);
     }
 
-    private Vector3D GetScrollTranslation(CompositionVisual compositionVisual)
+    private Vector3D GetScrollTranslation(CompositionVisual compositionVisual, Vector3D position)
     {
         var margin = Child!.Margin + Padding;
-        var position = _interactionTracker!.Position;
         var offset = compositionVisual.Offset;
 
         return new Vector3D(
