@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/927a8c80-ac2b-4d50-b86b-8b2fe853ce5d
 
 > [!WARNING]
 > This is an **experimental** project.
-> 
+>
 > The implemention contains some hack of Avalonia composition renderer.
 
 ## ScrollViewer 
@@ -65,6 +65,40 @@ Now you can use `ScrollView` like this:
     IsZoomEnabled="True"
     VerticalScrollBarVisibility="Hidden">
     <Image Source="avares://SmoothScroll.Avalonia.Sample/Assets/Images/4074.bmp" Stretch="UniformToFill" />
+</smoothScroll:ScrollView>
+```
+
+
+
+## ContentOrientation
+
+Instead of depending on `Vertical/HorizontalScrollBarVisibility`, `ScrollPresenter` uses a standalone `ContentOrientation` property to control the layout of the content. This property determines how content can grow when it's not explicitly constrained. 
+
+If `Height` and `Width` are explicitly set on the content, `ContentOrientation` has no effect.
+
+```xaml
+<ScrollViewer
+    x:Name="HorizontalSnapsScrollViewer"
+    HorizontalAlignment="Stretch">
+    <ScrollViewer.Styles>
+        <Style Selector="controls|ScrollPresenter">
+            <Setter Property="ContentOrientation" Value="Horizontal" />
+        </Style>
+    </ScrollViewer.Styles>
+    <StackPanel Orientation="Horizontal">
+        ...
+    </StackPanel>
+</ScrollViewer>
+```
+
+```xaml
+<smoothScroll:ScrollView
+    x:Name="HorizontalSnapsScrollViewer"
+    HorizontalAlignment="Stretch"
+    ContentOrientation="Horizontal">
+    <StackPanel Orientation="Horizontal">
+        ...
+    </StackPanel>
 </smoothScroll:ScrollView>
 ```
 
