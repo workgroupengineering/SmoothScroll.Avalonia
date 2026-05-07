@@ -433,14 +433,10 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        var compositionVisual = GetCompositionVisual();
         base.OnDetachedFromVisualTree(e);
         StopArrangeTimer();
-        _interactionTracker?.Dispose();
-        _interactionTracker = null;
-        _interactionSource?.Dispose();
-        _interactionSource = null;
-        _animationGroup?.Dispose();
-        _animationGroup = null;
+        ClearScrollAnimation(compositionVisual);
     }
 
     protected override void OnLoaded(RoutedEventArgs e)
@@ -453,20 +449,37 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
     private void Initialize()
     {
         InitializeInteractionTracker();
-        // HACK: We must set ServerObject's scale manually as it's default value is 0.
-        // Otherwise, the visual will be invisible.
-        var childVisual = GetCompositionVisual();
-        var scale = new Vector3D(_interactionTracker!.Scale, _interactionTracker.Scale, _interactionTracker.Scale);
-
-        // This directly access Server side object from UI thread, which is usually considered not safe
-        // however this should be fine as it is before the composition activated / animations running.
-        //childVisual!.Server.Scale = scale;
         EnsureScrollAnimation();
     }
 
     private void InitializeInteractionTracker()
     {
         var compositionVisual = GetCompositionVisual();
+        if (compositionVisual is null)
+        {
+            return;
+        }
+
+        if (_interactionTracker is not null)
+        {
+            if (_interactionTracker.Compositor != compositionVisual.Compositor)
+            {
+                DisposeInteractionTracker();
+            }
+            else
+            {
+                _interactionTracker.MinScale = MinZoomFactor;
+                _interactionTracker.MaxScale = MaxZoomFactor;
+                UpdateInteractionOptions();
+                return;
+            }
+        }
+
+        if (_interactionTracker is not null)
+        {
+            return;
+        }
+
         var scrollableArea = CalculateScrollableArea(ZoomFactor);
         var initialPosition = Vector3D.Clamp(
             new Vector3D(Offset.X, Offset.Y, 0),
@@ -491,6 +504,14 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
         }
 
         UpdateInteractionOptions();
+    }
+
+    private void DisposeInteractionTracker()
+    {
+        _interactionSource?.Dispose();
+        _interactionSource = null;
+        _interactionTracker?.Dispose();
+        _interactionTracker = null;
     }
 
     /// <summary>
@@ -812,7 +833,7 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
         }
         else if (change.Property == PaddingProperty)
         {
-            _animationGroup = null;
+            ClearScrollAnimation(GetCompositionVisual());
             EnsureScrollAnimation();
         }
         else if (change.Property == ScrollFeaturesProperty ||
@@ -853,6 +874,16 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
 
     private void ChildChanged(AvaloniaPropertyChangedEventArgs e)
     {
+        if (e.OldValue is Control oldChild)
+        {
+            oldChild.AttachedToVisualTree -= ChildAttachedToVisualTree;
+            ClearScrollAnimation(ElementComposition.GetElementVisual(oldChild));
+        }
+        else
+        {
+            ClearScrollAnimation(GetCompositionVisual());
+        }
+
         if (e.OldValue is not null)
         {
             SetCurrentValue(OffsetProperty, default);
@@ -860,7 +891,26 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
             compositionVisual?.ImplicitAnimations = null;
         }
 
+        if (e.NewValue is Control newChild)
+        {
+            newChild.AttachedToVisualTree -= ChildAttachedToVisualTree;
+            newChild.AttachedToVisualTree += ChildAttachedToVisualTree;
+
+            if (IsLoaded && newChild.IsAttachedToVisualTree())
+            {
+                Initialize();
+            }
+        }
+
         EnsureScrollAnimation();
+    }
+
+    private void ChildAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (IsLoaded)
+        {
+            Initialize();
+        }
     }
 
     private void EnsureAnchorElementSelection()
@@ -1357,32 +1407,93 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
     /// </summary>
     private void EnsureScrollAnimation()
     {
-        if (Child is null || !Child.IsAttachedToVisualTree())
+        if (Child is null || _interactionTracker is null || !Child.IsAttachedToVisualTree())
             return;
         var compositionVisual = ElementComposition.GetElementVisual(Child)!;
         if (_animationGroup is null)
         {
-            var scrollAnimation = compositionVisual!.Compositor.CreateExpressionAnimation();
-            scrollAnimation.Expression =
-                "Vector3(Margin.X, Margin.Y, 0) - Vector3(Tracker.Position.X, Tracker.Position.Y, Tracker.Position.Z) + Vector3(this.Target.Offset.X, this.Target.Offset.Y, this.Target.Offset.Z)";
-            scrollAnimation.Target = "Translation";
-            scrollAnimation.SetReferenceParameter("Tracker", _interactionTracker!);
-            scrollAnimation.SetReferenceParameter("vis", compositionVisual);
-
-            var margin = Child!.Margin + Padding;
-            scrollAnimation.SetVector2Parameter("Margin", new Vector2((float)margin.Left, (float)margin.Top));
-
-            var scaleAnimation = compositionVisual!.Compositor.CreateExpressionAnimation();
-            scaleAnimation.Expression = "Vector3(Tracker.Scale, Tracker.Scale, Tracker.Scale)";
-            scaleAnimation.SetReferenceParameter("Tracker", _interactionTracker!);
-            scaleAnimation.Target = "Scale";
-
-            _animationGroup = compositionVisual.Compositor.CreateAnimationGroup();
-            _animationGroup.Add(scrollAnimation);
-            _animationGroup.Add(scaleAnimation);
+            SynchronizeCompositionVisual(compositionVisual);
+            _animationGroup = CreateScrollAnimationGroup(compositionVisual);
         }
 
         compositionVisual.StartAnimationGroup(_animationGroup);
+
+        // Avalonia expression animations are invalidation-driven; starting one does
+        // not enqueue an initial evaluation. Force the freshly attached expressions
+        // through the same server-side animation pipeline so first render matches
+        // the tracker state instead of waiting for the next input delta.
+        var serverVisual = compositionVisual.Server;
+        compositionVisual.Compositor.PostServerJob(() =>
+        {
+            serverVisual.Animations?.EvaluateAnimations();
+            serverVisual.RecomputeOwnProperties();
+        });
+    }
+
+    private void ClearScrollAnimation(CompositionVisual? compositionVisual)
+    {
+        if (_animationGroup is null)
+        {
+            return;
+        }
+
+        compositionVisual?.StopAnimationGroup(_animationGroup);
+        _animationGroup.Dispose();
+        _animationGroup = null;
+    }
+
+    private CompositionAnimationGroup CreateScrollAnimationGroup(CompositionVisual compositionVisual)
+    {
+        var scrollAnimation = compositionVisual.Compositor.CreateExpressionAnimation();
+        scrollAnimation.Expression =
+            "Vector3(Margin.X, Margin.Y, 0) - Vector3(Tracker.Position.X, Tracker.Position.Y, Tracker.Position.Z) + Vector3(this.Target.Offset.X, this.Target.Offset.Y, this.Target.Offset.Z)";
+        scrollAnimation.Target = "Translation";
+        scrollAnimation.SetReferenceParameter("Tracker", _interactionTracker!);
+
+        var margin = Child!.Margin + Padding;
+        scrollAnimation.SetVector2Parameter("Margin", new Vector2((float)margin.Left, (float)margin.Top));
+
+        var scaleAnimation = compositionVisual.Compositor.CreateExpressionAnimation();
+        scaleAnimation.Expression = "Vector3(Tracker.Scale, Tracker.Scale, Tracker.Scale)";
+        scaleAnimation.SetReferenceParameter("Tracker", _interactionTracker!);
+        scaleAnimation.Target = "Scale";
+
+        var animationGroup = compositionVisual.Compositor.CreateAnimationGroup();
+        animationGroup.Add(scrollAnimation);
+        animationGroup.Add(scaleAnimation);
+        return animationGroup;
+    }
+
+    private void SynchronizeCompositionVisual(CompositionVisual compositionVisual)
+    {
+        if (_interactionTracker is null || Child is null)
+        {
+            return;
+        }
+
+        var scale = GetScrollScale();
+        var translation = GetScrollTranslation(compositionVisual);
+
+        compositionVisual.Scale = scale;
+        compositionVisual.Translation = translation;
+    }
+
+    private Vector3D GetScrollScale()
+    {
+        var scale = _interactionTracker!.Scale;
+        return new Vector3D(scale, scale, scale);
+    }
+
+    private Vector3D GetScrollTranslation(CompositionVisual compositionVisual)
+    {
+        var margin = Child!.Margin + Padding;
+        var position = _interactionTracker!.Position;
+        var offset = compositionVisual.Offset;
+
+        return new Vector3D(
+            margin.Left - position.X + offset.X,
+            margin.Top - position.Y + offset.Y,
+            offset.Z - position.Z);
     }
 
     private void UpdateInteractionOptions()
