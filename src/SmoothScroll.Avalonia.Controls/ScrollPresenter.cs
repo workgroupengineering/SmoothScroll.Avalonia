@@ -475,11 +475,6 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
             }
         }
 
-        if (_interactionTracker is not null)
-        {
-            return;
-        }
-
         var scrollableArea = CalculateScrollableArea(ZoomFactor);
         var initialPosition = Vector3D.Clamp(
             new Vector3D(Offset.X, Offset.Y, 0),
@@ -541,7 +536,8 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
 
         IDisposable?[] subscriptionDisposables = new IDisposable?[]
         {
-
+            owner is ScrollView ? null : IfUnset(CanHorizontallyScrollProperty, p => Bind(p, owner.GetObservable(ScrollViewer.HorizontalScrollBarVisibilityProperty, NotDisabled), BindingPriority.Template)),
+            owner is ScrollView ? null : IfUnset(CanVerticallyScrollProperty, p => Bind(p, owner.GetObservable(ScrollViewer.VerticalScrollBarVisibilityProperty, NotDisabled), BindingPriority.Template)),
             IfUnset(OffsetProperty, p => Bind(p, owner.GetBindingObservable(ScrollViewer.OffsetProperty), BindingPriority.Template)),
             IfUnset(HorizontalContentAlignmentProperty, p => Bind(p, owner.GetBindingObservable(ContentControl.HorizontalContentAlignmentProperty), BindingPriority.Template)),
             IfUnset(VerticalContentAlignmentProperty, p => Bind(p, owner.GetBindingObservable(ContentControl.VerticalContentAlignmentProperty), BindingPriority.Template)),
@@ -767,31 +763,29 @@ public sealed partial class ScrollPresenter : ContentPresenter, IScrollable, ISc
     {
         if (IsZoomEnabled)
         {
-            SetValue(CanHorizontallyScrollProperty, true);
-            SetValue(CanVerticallyScrollProperty, true);
+            SetCurrentValue(CanHorizontallyScrollProperty, true);
+            SetCurrentValue(CanVerticallyScrollProperty, true);
             return;
         }
-        if (Child?.PreviousMeasure is null)
-            return;
-        var scrollableWidth = Math.Max(0, Child.PreviousMeasure.Value.Width - finalSize.Width);
-        var scrollHeight = Math.Max(0, Child.PreviousMeasure.Value.Height - finalSize.Height);
+        var scrollableWidth = Math.Max(0, Child.DesiredSize.Width - finalSize.Width);
+        var scrollHeight = Math.Max(0, Child.DesiredSize.Height - finalSize.Height);
         if (HorizontalScrollMode == ScrollMode.Enabled
             || (HorizontalScrollMode == ScrollMode.Auto && scrollableWidth > 0))
         {
-            SetValue(CanHorizontallyScrollProperty, true);
+            SetCurrentValue(CanHorizontallyScrollProperty, true);
         }
         else
         {
-            SetValue(CanHorizontallyScrollProperty, false);      
+            SetCurrentValue(CanHorizontallyScrollProperty, false);
         }
         if (VerticalScrollMode == ScrollMode.Enabled
             || (VerticalScrollMode == ScrollMode.Auto && scrollHeight > 0))
         {
-            SetValue(CanVerticallyScrollProperty, true);
+            SetCurrentValue(CanVerticallyScrollProperty, true);
         }
         else
         {
-            SetValue(CanVerticallyScrollProperty, false);
+            SetCurrentValue(CanVerticallyScrollProperty, false);
         }
     }
 
