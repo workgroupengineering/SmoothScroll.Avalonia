@@ -13,133 +13,46 @@ public partial class InteractionTracker : CompositionObject
 {
     private int _requestId = 0;
 
+    private readonly List<InteractionTrackerRequest> _pendingRequests = [];
+
     internal new ServerInteractionTracker Server { get; }
 
-    internal InteractionTracker(Compositor compositor, ServerInteractionTracker server)
-        : this(compositor, server, default, 1.0)
-    {
-    }
 
     internal InteractionTracker(
         Compositor compositor,
-        ServerInteractionTracker server,
-        Vector3D initialPosition,
-        double initialScale) : base(compositor, server)
+        ServerInteractionTracker server) : base(compositor, server)
     {
         Server = server;
-        Position = initialPosition;
-        Scale = initialScale;
-        server.InitializeValues(initialPosition, initialScale);
         RunOnServerThread(serverTracker => serverTracker.AttachClient(this));
     }
 
 
     public IInteractionTrackerOwner? Owner { get; init; }
 
-    public double MinScale
-    {
-        get;
-        set
-        {
-            if (MathUtilities.AreClose(field, value))
-                return;
-
-            field = value;
-            Compositor.Loop.Wakeup();
-            RunOnServerThread(serverTracker => serverTracker.MinScale = value);
-        }
-    } = 1.0;
-
-    public double MaxScale
-    {
-        get;
-        set
-        {
-            if (MathUtilities.AreClose(field, value))
-                return;
-
-            field = value;
-            Compositor.Loop.Wakeup();
-            RunOnServerThread(serverTracker => serverTracker.MaxScale = value);
-        }
-    } = 1.0;
-
-
-    public Vector3D MinPosition
-    {
-        get;
-        set
-        {
-            if (field == value)
-                return;
-
-            field = value;
-            Compositor.Loop.Wakeup();
-            RunOnServerThread(serverTracker => serverTracker.UpdateMinPosition(value));
-        }
-    }
-
-    public Vector3D MaxPosition
-    {
-        get;
-        set
-        {
-            if (field == value)
-                return;
-
-            field = value;
-            Compositor.Loop.Wakeup();
-            RunOnServerThread(serverTracker => serverTracker.UpdateMaxPosition(value));
-        }
-    }
-
-    public Vector3D? PositionInertiaDecayRate
-    {
-        get;
-        set
-        {
-            if (field == value)
-                return;
-
-            field = value;
-            Compositor.Loop.Wakeup();
-            RunOnServerThread(serverTracker => serverTracker.PositionInertiaDecayRate = value);
-        }
-    }
-
-    public Vector3D Position { get; private set; }
-
-    public double Scale { get; private set; }
-
     public int TryUpdatePosition(Vector3D value)
-    => TryUpdatePosition(value, InteractionTrackerClampingOption.Auto);
+        => TryUpdatePosition(value, InteractionTrackerClampingOption.Auto);
 
     public int TryUpdatePositionBy(Vector3D amount)
         => TryUpdatePosition(Position + amount);
 
     public int TryUpdatePosition(Vector3D value, InteractionTrackerClampingOption option)
     {
-        var id = Interlocked.Increment(ref _requestId);
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(serverTracker => serverTracker.TryUpdatePosition(value, option, id));
+        var id = NextRequestId();
+        QueueRequest(new TryUpdatePositionRequest(id, value, option));
         return id;
     }
 
     public int TryUpdatePositionBy(Vector3D amount, InteractionTrackerClampingOption option)
         => TryUpdatePosition(Position + amount, option);
 
-    public void TryUpdateScale(double scale, Vector3D centerPoint)
+    public int TryUpdateScale(double scale, Vector3D centerPoint)
     {
-        var currentScale = Scale;
-        if (MathUtilities.AreClose(currentScale, scale))
-            return;
-
-        var id = Interlocked.Increment(ref _requestId);
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(serverTracker => serverTracker.TryUpdateScale(scale, centerPoint, id));
+        var id = NextRequestId();
+        QueueRequest(new TryUpdateScaleRequest(id, Scale, centerPoint ));
+        return id;
     }
 
-    public void TryUpdatePositionWithAnimation(CompositionAnimation animation)
+    public int TryUpdatePositionWithAnimation(CompositionAnimation animation)
     {
         if (animation is not Vector3DKeyFrameAnimation and not ExpressionAnimation)
         {
@@ -147,11 +60,12 @@ public partial class InteractionTracker : CompositionObject
         }
 
         animation.Target = nameof(Server.Position);
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(serverTracker => serverTracker.ReceiveAnimationStarting(animation));
+        var id = NextRequestId();
+        QueueRequest(new StartAnimationRequest(id, animation, null));
+        return id;
     }
 
-    public void TryUpdateScaleWithAnimation(CompositionAnimation animation, Vector3D centerPoint)
+    public int TryUpdateScaleWithAnimation(CompositionAnimation animation, Vector3D centerPoint)
     {
         if (animation is not DoubleKeyFrameAnimation and not ExpressionAnimation)
         {
@@ -159,45 +73,46 @@ public partial class InteractionTracker : CompositionObject
         }
 
         animation.Target = nameof(Server.Scale);
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(serverTracker => serverTracker.ReceiveAnimationStarting(animation, centerPoint));
+        var id = NextRequestId();
+        QueueRequest(new StartAnimationRequest(id,animation, centerPoint));
+        return id;
     }
 
 
-    internal void StartUserManipulation(Point position, IPointer pointer)
+    internal void BeginUserManipulation(Point position, IPointer pointer)
     {
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(serverTracker => serverTracker.StartUserManipulation(position, pointer));
+        var id = NextRequestId();
+        QueueRequest(new BeginUserManipulationRequest(id, position, pointer));
     }
 
     internal void CompleteUserManipulation()
     {
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(static serverTracker => serverTracker.CompleteUserManipulation());
+        var id = NextRequestId();
+        QueueRequest(new CompleteManipulationRequest(id));
     }
 
-    internal void ReceiveManipulationDelta(Point translationDelta)
+    internal void ApplyManipulationDelta(Vector translationDelta)
     {
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(serverTracker => serverTracker.ReceiveManipulationDelta(-translationDelta));
+        var id = NextRequestId();
+        QueueRequest(new ApplyManipulationDeltaRequest(id, translationDelta));
     }
 
-    internal void ReceiveInertiaStarting(Point linearVelocity)
+    internal void StartInertia(Point linearVelocity)
     {
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(serverTracker => serverTracker.ReceiveInertiaStarting(-linearVelocity));
+        var id = NextRequestId();
+        QueueRequest(new StartInertiaRequest(id, linearVelocity));
     }
 
-    internal void ReceiveScaleDelta(Point origin, double delta)
+    internal void AddScaleVelocity(Point origin, double delta)
     {
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(serverTracker => serverTracker.ReceiveScaleDelta(origin, delta));
+        var id = NextRequestId();
+        QueueRequest(new AddScaleVelocityRequest(id, origin, delta));
     }
 
-    internal void ReceivePointerWheel(double delta, bool isHorizontal)
+    internal void ApplyWheelDelta(Vector delta)
     {
-        Compositor.Loop.Wakeup();
-        RunOnServerThread(serverTracker => serverTracker.ReceivePointerWheel(-delta, isHorizontal));
+        var id = NextRequestId();
+        QueueRequest(new ApplyWheelDeltaRequest(id, delta));
     }
 
     internal void RaiseValuesChanged(Vector3D position, double scale, int requestId)
@@ -262,45 +177,37 @@ public partial class InteractionTracker : CompositionObject
 
         Compositor.PostServerJob(() => action(Server), false);
     }
+    private int NextRequestId() => Interlocked.Increment(ref _requestId);
 
-
-}
-
-public partial class InteractionTracker 
-{
-    private InteractionTrackerChangedFields _changedFieldsOfInteractionTracker;
-    public override void StartAnimation(string propertyName, CompositionAnimation animation, ExpressionVariant? finalValue)
+    private void QueueRequest(InteractionTrackerRequest request)
     {
-        if(propertyName == nameof(MinPosition))
-        {
-            var server = animation.CreateInstance(this.Server, finalValue);
-            PendingAnimations[ServerInteractionTracker.s_IdOfMinPositionProperty] = server;
-            _changedFieldsOfInteractionTracker |= InteractionTrackerChangedFields.MinPositionAnimated;
-            RegisterForSerialization();
-            return;
-        }
-
-        if(propertyName == nameof(MaxPosition))
-        {
-            var server = animation.CreateInstance(this.Server, finalValue);
-            PendingAnimations[ServerInteractionTracker.s_IdOfMaxPositionProperty] = server;
-            _changedFieldsOfInteractionTracker |= InteractionTrackerChangedFields.MaxPositionAnimated;
-            RegisterForSerialization();
-            return;
-        }
-        base.StartAnimation(propertyName, animation, finalValue);
+        _pendingRequests.Add(request);
+        RegisterForSerialization();
     }
 
-    public override void SerializeChangesCore(BatchStreamWriter writer)
+    partial void SerializeRequests(BatchStreamWriter writer)
     {
-        base.SerializeChangesCore(writer);
-        writer.Write(_changedFieldsOfInteractionTracker);
-        if ((_changedFieldsOfInteractionTracker & InteractionTrackerChangedFields.MinPositionAnimated) == InteractionTrackerChangedFields.MinPositionAnimated)
-            writer.WriteObject(PendingAnimations.GetAndRemove(ServerInteractionTracker.s_IdOfMinPositionProperty));
-        if ((_changedFieldsOfInteractionTracker & InteractionTrackerChangedFields.MaxPositionAnimated) == InteractionTrackerChangedFields.MaxPositionAnimated)
-            writer.WriteObject(PendingAnimations.GetAndRemove(ServerInteractionTracker.s_IdOfMaxPositionProperty));
+        writer.Write(_pendingRequests.Count);
+        foreach(var request in _pendingRequests)
+        {
+            writer.WriteObject(request);
+        }
+        _pendingRequests.Clear();
     }
+    
 }
+
+internal record InteractionTrackerRequest(int RequestId);
+internal record TryUpdatePositionRequest(int RequestId, Vector3D Position, InteractionTrackerClampingOption ClampingOption) : InteractionTrackerRequest(RequestId);
+internal record TryUpdateScaleRequest(int RequestId, double Scale, Vector3D CenterPoint) : InteractionTrackerRequest(RequestId);
+internal record StartAnimationRequest(int RequestId, CompositionAnimation Animation, Vector3D? ScaleCenterPoint) : InteractionTrackerRequest(RequestId);
+internal record BeginUserManipulationRequest(int RequestId, Point Position, IPointer Pointer) : InteractionTrackerRequest(RequestId);
+internal record CompleteManipulationRequest(int RequestId) : InteractionTrackerRequest(RequestId);
+internal record ApplyManipulationDeltaRequest(int RequestId, Vector TranslationDelta) : InteractionTrackerRequest(RequestId);
+internal record StartInertiaRequest(int RequestId, Point LinearVelocity) : InteractionTrackerRequest(RequestId);
+internal record AddScaleVelocityRequest(int RequestId, Point Origin, double Delta) : InteractionTrackerRequest(RequestId);
+internal record ApplyWheelDeltaRequest(int RequestId, Vector Delta) : InteractionTrackerRequest(RequestId);
+
 
 public static class CompositorExtensions
 {
@@ -308,15 +215,6 @@ public static class CompositorExtensions
     {
         public InteractionTracker CreateInteractionTracker(IInteractionTrackerOwner? owner) =>
             new(compositor, new ServerInteractionTracker(compositor.Server))
-            {
-                Owner = owner
-            };
-
-        public InteractionTracker CreateInteractionTracker(
-            IInteractionTrackerOwner? owner,
-            Vector3D initialPosition,
-            double initialScale) =>
-            new(compositor, new ServerInteractionTracker(compositor.Server), initialPosition, initialScale)
             {
                 Owner = owner
             };

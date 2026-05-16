@@ -51,7 +51,7 @@ internal abstract class InertiaState : InteractionTrackerState
         Handler.Start();
     }
 
-    internal override void StartUserManipulation(Point position, IPointer pointer)
+    internal override void BeginUserManipulation(Point position, IPointer pointer)
     {
         Handler.Stop();
         _interactionTracker.ChangeState(new InteractingState(_interactionTracker));
@@ -61,7 +61,7 @@ internal abstract class InertiaState : InteractionTrackerState
     {
     }
 
-    internal override void ReceiveScaleDelta(Point origin, double delta)
+    internal override void AddScaleVelocity(Point origin, double delta)
     {
         if (delta <= 0 || double.IsNaN(delta) || double.IsInfinity(delta))
         {
@@ -89,17 +89,17 @@ internal abstract class InertiaState : InteractionTrackerState
             0));
     }
 
-    internal override void ReceiveManipulationDelta(Point translationDelta)
+    internal override void ApplyManipulationDelta(Vector translationDelta)
     {
     }
 
-    internal override void ReceiveInertiaStarting(Point linearVelocity)
+    internal override void StartInertia(Vector linearVelocity)
     {
     }
 
-    internal override void ReceivePointerWheel(double delta, bool isHorizontal)
+    internal override void ApplyWheelDelta(Vector delta)
     {
-        var newDelta = isHorizontal ? new Vector3D(delta, 0, 0) : new Vector3D(0, delta, 0);
+        var newDelta = new Vector3D(delta.X, delta.Y, 0);
         var totalDelta = (Handler.FinalModifiedPosition - _interactionTracker.Position) + newDelta;
         var targetVelocity = Vector3D.Divide(totalDelta, 0.25);
 
@@ -160,7 +160,7 @@ internal abstract class InertiaState : InteractionTrackerState
         }
     }
 
-    internal override void ReceiveAnimationStarting(CompositionAnimation animation, Vector3D? scaleCenterPoint = null)
+    internal override void StartAnimation(CompositionAnimation animation, Vector3D? scaleCenterPoint = null)
     {
         Handler.Stop();
         _interactionTracker.ChangeState(new CustomAnimationState(_interactionTracker, animation, scaleCenterPoint));

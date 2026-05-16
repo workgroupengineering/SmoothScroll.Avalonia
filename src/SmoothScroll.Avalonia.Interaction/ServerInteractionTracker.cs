@@ -17,17 +17,11 @@ internal partial class ServerInteractionTracker
     private InteractionTrackerState? _state;
     private InteractionTracker? _client;
 
-    public Vector3D? PositionInertiaDecayRate { get; set; }
 
     partial void Initialize()
     {
         _scale = 1;
-    }
-
-    internal void InitializeValues(Vector3D position, double scale)
-    {
-        _position = position;
-        _scale = scale;
+        _positionInertiaDecayRate = new Vector3D(0.95, 0.95, 0.95);
     }
 
     public void AttachClient(InteractionTracker client)
@@ -35,23 +29,6 @@ internal partial class ServerInteractionTracker
         _client = client;
         Activate();
         _state ??= new IdleState(this, requestId: 0, isInitialIdleState: true);
-    }
-
-    public override CompositionProperty? GetCompositionProperty(string name)
-    {
-        if (name == "Position")
-            return s_IdOfPositionProperty;
-        if (name == "Scale")
-            return s_IdOfScaleProperty;
-        if (name == "MinPosition")
-            return s_IdOfMinPositionProperty;
-        if (name == "MaxPosition")
-            return s_IdOfMaxPositionProperty;
-        if (name == "MinScale")
-            return s_IdOfMinScaleProperty;
-        if (name == "MaxScale")
-            return s_IdOfMaxScaleProperty;
-        return base.GetCompositionProperty(name);
     }
 
     public void UpdateMinPosition(Vector3D value)
@@ -65,33 +42,6 @@ internal partial class ServerInteractionTracker
         MaxPosition = value;
         State.ReceiveBoundsUpdate();
     }
-
-    public void TryUpdatePosition(Vector3D value, InteractionTrackerClampingOption option, int requestId)
-        => State.TryUpdatePosition(value, option, requestId);
-
-    public void TryUpdateScale(double scale, Vector3D centerPoint, int requestId)
-        => SetScale(scale, centerPoint, requestId);
-
-    public void StartUserManipulation(Point position, IPointer pointer)
-        => State.StartUserManipulation(position, pointer);
-
-    public void CompleteUserManipulation()
-        => State.CompleteUserManipulation();
-
-    public void ReceiveManipulationDelta(Point translationDelta)
-        => State.ReceiveManipulationDelta(translationDelta);
-
-    public void ReceiveInertiaStarting(Point linearVelocity)
-        => State.ReceiveInertiaStarting(linearVelocity);
-
-    public void ReceiveScaleDelta(Point origin, double delta)
-        => State.ReceiveScaleDelta(origin, delta);
-
-    public void ReceivePointerWheel(double delta, bool isHorizontal)
-        => State.ReceivePointerWheel(delta, isHorizontal);
-
-    public void ReceiveAnimationStarting(CompositionAnimation animation, Vector3D? scaleCenterPoint = null)
-        => State.ReceiveAnimationStarting(animation, scaleCenterPoint);
 
     internal void SetPosition(Vector3D newPosition, int requestId)
     {
@@ -168,14 +118,6 @@ internal partial class ServerInteractionTracker
 
     internal void NotifyRequestIgnored(int requestId)
         => PostToClient(client => client.RaiseRequestIgnored(requestId));
-
-    public void StartPositionAnimation(CompositionAnimation animation)
-    {
-        var instance = animation.CreateInstance(this, null);
-        GetOrCreateAnimations().OnSetAnimatedValue(s_IdOfPositionProperty,
-            ref _position, Compositor.Clock.Elapsed, instance);
-    }
-
     private InteractionTrackerState State => _state ??= new IdleState(this, requestId: 0, isInitialIdleState: true);
 
     private void NotifyValuesChanged(Vector3D position, double scale, int requestId)
@@ -195,123 +137,44 @@ internal partial class ServerInteractionTracker
     {
         Debug.WriteLine($"{count}:{previousState} -> {newState}");
     }
-}
 
-/// <summary>
-/// Generated code.
-/// </summary>
-partial class ServerInteractionTracker : ServerObject
-{
-    internal ServerInteractionTracker(ServerCompositor compositor) : base(compositor)
+    partial void DeserializeRequests(BatchStreamReader reader)
     {
-        Initialize();
-    }
-
-    partial void Initialize();
-    partial void DeserializeChangesExtra(BatchStreamReader c);
-    Vector3D _position;
-    public Vector3D Position { get => _position; set => SetAnimatedValue(s_IdOfPositionProperty, out _position, value); }
-
-    internal readonly static CompositionProperty<Vector3D> s_IdOfPositionProperty =
-        CompositionProperty.Register<ServerInteractionTracker, Vector3D>(
-            "Position",
-            obj => ((ServerInteractionTracker)obj)._position,
-            (obj, v) => ((ServerInteractionTracker)obj)._position = v,
-            GetPosition);
-
-    private static ExpressionVariant GetPosition(SimpleServerObject obj)
-    {
-        return ((ServerInteractionTracker)obj)._position;
-    }
-
-    Vector3D _minPosition;
-    public Vector3D MinPosition { get => _minPosition; set => SetAnimatedValue(s_IdOfMinPositionProperty, out _minPosition, value); }
-
-    internal readonly static CompositionProperty<Vector3D> s_IdOfMinPositionProperty = CompositionProperty.Register<ServerInteractionTracker, Vector3D>("MinPosition", obj => ((ServerInteractionTracker)obj)._minPosition, (obj, v) => ((ServerInteractionTracker)obj)._minPosition = v, obj => ((ServerInteractionTracker)obj)._minPosition);
-    Vector3D _maxPosition;
-    public Vector3D MaxPosition { get => _maxPosition; set => SetAnimatedValue(s_IdOfMaxPositionProperty, out _maxPosition, value); }
-
-    internal readonly static CompositionProperty<Vector3D> s_IdOfMaxPositionProperty = CompositionProperty.Register<ServerInteractionTracker, Vector3D>("MaxPosition", obj => ((ServerInteractionTracker)obj)._maxPosition, (obj, v) => ((ServerInteractionTracker)obj)._maxPosition = v, obj => ((ServerInteractionTracker)obj)._maxPosition);
-    double _minScale;
-    public double MinScale { get => _minScale; set => SetAnimatedValue(s_IdOfMinScaleProperty, out _minScale, value); }
-
-    internal readonly static CompositionProperty<double> s_IdOfMinScaleProperty = CompositionProperty.Register<ServerInteractionTracker, double>("MinScale", obj => ((ServerInteractionTracker)obj)._minScale, (obj, v) => ((ServerInteractionTracker)obj)._minScale = v, obj => ((ServerInteractionTracker)obj)._minScale);
-    double _maxScale;
-    public double MaxScale { get => _maxScale; set => SetAnimatedValue(s_IdOfMaxScaleProperty, out _maxScale, value); }
-
-    internal readonly static CompositionProperty<double> s_IdOfMaxScaleProperty = CompositionProperty.Register<ServerInteractionTracker, double>("MaxScale", obj => ((ServerInteractionTracker)obj)._maxScale, (obj, v) => ((ServerInteractionTracker)obj)._maxScale = v, obj => ((ServerInteractionTracker)obj)._maxScale);
-    double _scale;
-    public double Scale { get => _scale; set => SetAnimatedValue(s_IdOfScaleProperty, out _scale, value); }
-
-    internal readonly static CompositionProperty<double> s_IdOfScaleProperty =
-        CompositionProperty.Register<ServerInteractionTracker, double>(
-            "Scale",
-            obj => ((ServerInteractionTracker)obj)._scale,
-            (obj, v) => ((ServerInteractionTracker)obj)._scale = v,
-            GetScale);
-
-    private static ExpressionVariant GetScale(SimpleServerObject obj)
-    {
-        return ((ServerInteractionTracker)obj)._scale;
-    }
-
-    protected override void DeserializeChangesCore(BatchStreamReader reader, TimeSpan committedAt)
-    {
-        base.DeserializeChangesCore(reader, committedAt);
-        DeserializeChangesExtra(reader);
-        var changed = reader.Read<InteractionTrackerChangedFields>();
-        if ((changed & InteractionTrackerChangedFields.PositionAnimated) == InteractionTrackerChangedFields.PositionAnimated)
-            SetAnimatedValue(s_IdOfPositionProperty, ref _position, committedAt, reader.ReadObject<IAnimationInstance>());
-        else if ((changed & InteractionTrackerChangedFields.Position) == InteractionTrackerChangedFields.Position)
-            Position = reader.Read<Vector3D>();
-        if ((changed & InteractionTrackerChangedFields.MinPositionAnimated) == InteractionTrackerChangedFields.MinPositionAnimated)
-            SetAnimatedValue(s_IdOfMinPositionProperty, ref _minPosition, committedAt, reader.ReadObject<IAnimationInstance>());
-        else if ((changed & InteractionTrackerChangedFields.MinPosition) == InteractionTrackerChangedFields.MinPosition)
-            MinPosition = reader.Read<Vector3D>();
-        if ((changed & InteractionTrackerChangedFields.MaxPositionAnimated) == InteractionTrackerChangedFields.MaxPositionAnimated)
-            SetAnimatedValue(s_IdOfMaxPositionProperty, ref _maxPosition, committedAt, reader.ReadObject<IAnimationInstance>());
-        else if ((changed & InteractionTrackerChangedFields.MaxPosition) == InteractionTrackerChangedFields.MaxPosition)
-            MaxPosition = reader.Read<Vector3D>();
-        if ((changed & InteractionTrackerChangedFields.MinScaleAnimated) == InteractionTrackerChangedFields.MinScaleAnimated)
-            SetAnimatedValue(s_IdOfMinScaleProperty, ref _minScale, committedAt, reader.ReadObject<IAnimationInstance>());
-        else if ((changed & InteractionTrackerChangedFields.MinScale) == InteractionTrackerChangedFields.MinScale)
-            MinScale = reader.Read<double>();
-        if ((changed & InteractionTrackerChangedFields.MaxScaleAnimated) == InteractionTrackerChangedFields.MaxScaleAnimated)
-            SetAnimatedValue(s_IdOfMaxScaleProperty, ref _maxScale, committedAt, reader.ReadObject<IAnimationInstance>());
-        else if ((changed & InteractionTrackerChangedFields.MaxScale) == InteractionTrackerChangedFields.MaxScale)
-            MaxScale = reader.Read<double>();
-        if ((changed & InteractionTrackerChangedFields.ScaleAnimated) == InteractionTrackerChangedFields.ScaleAnimated)
-            SetAnimatedValue(s_IdOfScaleProperty, ref _scale, committedAt, reader.ReadObject<IAnimationInstance>());
-        else if ((changed & InteractionTrackerChangedFields.Scale) == InteractionTrackerChangedFields.Scale)
-            Scale = reader.Read<double>();
-        OnFieldsDeserialized(changed);
-    }
-
-    partial void OnFieldsDeserialized(InteractionTrackerChangedFields changed);
-    internal static void SerializeAllChanges(BatchStreamWriter writer, Vector3D position, Vector3D minPosition, Vector3D maxPosition, double minScale, double maxScale, double scale)
-    {
-        writer.Write(InteractionTrackerChangedFields.Position | InteractionTrackerChangedFields.MinPosition | InteractionTrackerChangedFields.MaxPosition | InteractionTrackerChangedFields.MinScale | InteractionTrackerChangedFields.MaxScale | InteractionTrackerChangedFields.Scale);
-        writer.Write(position);
-        writer.Write(minPosition);
-        writer.Write(maxPosition);
-        writer.Write(minScale);
-        writer.Write(maxScale);
-        writer.Write(scale);
+        var requestCount = reader.Read<int>();
+        for (var i = 0; i < requestCount; i++)
+        {
+            var request = reader.ReadObject();
+            switch (request)
+            {
+                case TryUpdatePositionRequest tryUpdatePositionRequest:
+                    State.TryUpdatePosition(tryUpdatePositionRequest.Position, tryUpdatePositionRequest.ClampingOption, tryUpdatePositionRequest.RequestId);
+                    break;
+                case TryUpdateScaleRequest tryUpdateScaleRequest:
+                    SetScale(tryUpdateScaleRequest.Scale, tryUpdateScaleRequest.CenterPoint, tryUpdateScaleRequest.RequestId);
+                    break;
+                case BeginUserManipulationRequest beginUserManipulationRequest:
+                    State.BeginUserManipulation(beginUserManipulationRequest.Position, beginUserManipulationRequest.Pointer);
+                    break;
+                case CompleteManipulationRequest completeManipulationRequest:
+                    State.CompleteUserManipulation();
+                    break;
+                case ApplyManipulationDeltaRequest applyManipulationDeltaRequest:
+                    State.ApplyManipulationDelta(applyManipulationDeltaRequest.TranslationDelta);
+                    break;
+                case StartInertiaRequest startInertiaRequest:
+                    State.StartInertia(startInertiaRequest.LinearVelocity);
+                    break;
+                case AddScaleVelocityRequest addScaleVelocityRequest:
+                    State.AddScaleVelocity(addScaleVelocityRequest.Origin, addScaleVelocityRequest.Delta);
+                    break;
+                case ApplyWheelDeltaRequest applyWheelDeltaRequest:
+                    State.ApplyWheelDelta(applyWheelDeltaRequest.Delta);
+                    break;
+                case StartAnimationRequest startAnimationRequest:
+                    State.StartAnimation(startAnimationRequest.Animation, startAnimationRequest.ScaleCenterPoint);
+                    break;
+            }
+        }
     }
 }
-[System.Flags]
-enum InteractionTrackerChangedFields : ushort
-{
-    Position = 1,
-    PositionAnimated = 2,
-    MinPosition = 4,
-    MinPositionAnimated = 8,
-    MaxPosition = 16,
-    MaxPositionAnimated = 32,
-    MinScale = 64,
-    MinScaleAnimated = 128,
-    MaxScale = 256,
-    MaxScaleAnimated = 512,
-    Scale = 1024,
-    ScaleAnimated = 2048
-}
+

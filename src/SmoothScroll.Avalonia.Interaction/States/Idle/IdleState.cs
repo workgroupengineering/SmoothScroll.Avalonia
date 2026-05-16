@@ -23,7 +23,7 @@ internal sealed class IdleState : InteractionTrackerState
         _interactionTracker.NotifyIdleStateEntered(_requestId, isFromBinding: false, _isInitialIdleState);
     }
 
-    internal override void StartUserManipulation(Point position, IPointer pointer)
+    internal override void BeginUserManipulation(Point position, IPointer pointer)
     {
         _interactionTracker.ChangeState(new InteractingState(_interactionTracker));
     }
@@ -32,7 +32,7 @@ internal sealed class IdleState : InteractionTrackerState
     {
     }
 
-    internal override void ReceiveScaleDelta(Point origin, double delta)
+    internal override void AddScaleVelocity(Point origin, double delta)
     {
         if (delta <= 0 || double.IsNaN(delta) || double.IsInfinity(delta))
         {
@@ -48,19 +48,19 @@ internal sealed class IdleState : InteractionTrackerState
             scaleOrigin: origin));
     }
 
-    internal override void ReceiveManipulationDelta(Point translationDelta)
+    internal override void ApplyManipulationDelta(Vector translationDelta)
     {
     }
 
-    internal override void ReceiveInertiaStarting(Point linearVelocity)
+    internal override void StartInertia(Vector linearVelocity)
     {
     }
 
-    internal override void ReceivePointerWheel(double delta, bool isHorizontal)
+    internal override void ApplyWheelDelta(Vector delta)
     {
         // Constant velocity for 250ms
         var velocityValue = delta / 0.25f;
-        var velocity = isHorizontal ? new Vector3D(velocityValue, 0, 0) : new Vector3D(0, velocityValue, 0);
+        var velocity = new Vector3D(velocityValue.X, velocityValue.Y, 0);
         _interactionTracker.ChangeState(new PointerWheelInertiaState(_interactionTracker, velocity, requestId: 0));
     }
 
@@ -88,7 +88,7 @@ internal sealed class IdleState : InteractionTrackerState
         _interactionTracker.SetPosition(clampedPosition, 0);
     }
 
-    internal override void ReceiveAnimationStarting(CompositionAnimation animation, Vector3D? centerPoint = null)
+    internal override void StartAnimation(CompositionAnimation animation, Vector3D? centerPoint = null)
     {
         _interactionTracker.ChangeState(new CustomAnimationState(_interactionTracker, animation, centerPoint));
     }
