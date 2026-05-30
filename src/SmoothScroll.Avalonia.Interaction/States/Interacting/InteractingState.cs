@@ -62,7 +62,7 @@ internal sealed class InteractingState : InteractionTrackerState
 
         if (scaleChanged)
         {
-            ApplyScale(origin, clampedScale);
+            ApplyScale(origin, clampedScale, currentPosition);
         }
         else if (!positionChanged)
         {
@@ -101,11 +101,22 @@ internal sealed class InteractingState : InteractionTrackerState
             position.Z);
     }
 
-    private void ApplyScale(Point origin, double scale)
+    private void ApplyScale(Point origin, double scale, Vector3D position)
     {
+        _position = ScalePosition(position, origin, scale / _previousScale);
         _interactionTracker.SetScale(scale, new Vector3D(origin.X, origin.Y, 0), 0);
         _previousScale = scale;
-        SyncPositionFromTracker();
+    }
+
+    private static Vector3D ScalePosition(Vector3D position, Point origin, double scaleRatio)
+    {
+        var deltaX = (origin.X + position.X) * (1 - scaleRatio);
+        var deltaY = (origin.Y + position.Y) * (1 - scaleRatio);
+
+        return new Vector3D(
+            position.X - deltaX,
+            position.Y - deltaY,
+            position.Z);
     }
 
     private void SyncPositionFromTracker()
@@ -148,97 +159,132 @@ internal sealed class InteractingState : InteractionTrackerState
 
     public static Vector3D GetElasticPoint(Vector3D current, Vector3D min, Vector3D max, double tension = Tension)
     {
-        var resX = current.X;
-        var resY = current.Y;
-        var resZ = current.Z;
+        return new Vector3D(
+            GetElasticCoordinate(current.X, min.X, max.X, tension),
+            GetElasticCoordinate(current.Y, min.Y, max.Y, tension),
+            GetElasticCoordinate(current.Z, min.Z, max.Z, tension));
+    }
 
-        if (current.X < min.X)
-        {
-            resX = min.X - CalculateOffset(min.X - current.X, tension);
-        }
-        else if (current.X > max.X)
-        {
-            resX = max.X + CalculateOffset(current.X - max.X, tension);
-        }
+    private static double GetElasticCoordinate(double current, double min, double max, double tension)
+    {
+        (min, max) = GetOrderedBounds(min, max);
 
-        if (current.Y < min.Y)
+        if (double.IsNaN(current))
         {
-            resY = min.Y - CalculateOffset(min.Y - current.Y, tension);
-        }
-        else if (current.Y > max.Y)
-        {
-            resY = max.Y + CalculateOffset(current.Y - max.Y, tension);
+            return min;
         }
 
-        if (current.Z < min.Z)
+        if (current < min)
         {
-            resZ = min.Z - CalculateOffset(min.Z - current.Z, tension);
-        }
-        else if (current.Z > max.Z)
-        {
-            resZ = max.Z + CalculateOffset(current.Z - max.Z, tension);
+            return min - CalculateOffset(min - current, tension);
         }
 
-        return new Vector3D(resX, resY, resZ);
+        if (current > max)
+        {
+            return max + CalculateOffset(current - max, tension);
+        }
+
+        return current;
+    }
+
+    public static Vector3D GetOriginalPoint(Vector3D elasticPoint, Vector3D min, Vector3D max, double tension = Tension)
+    {
+        return new Vector3D(
+            GetOriginalCoordinate(elasticPoint.X, min.X, max.X, tension),
+            GetOriginalCoordinate(elasticPoint.Y, min.Y, max.Y, tension),
+            GetOriginalCoordinate(elasticPoint.Z, min.Z, max.Z, tension));
+    }
+
+    private static double GetOriginalCoordinate(double elasticPoint, double min, double max, double tension)
+    {
+        (min, max) = GetOrderedBounds(min, max);
+
+        if (elasticPoint < min)
+        {
+            var offset = CalculateInverseOffset(min - elasticPoint, tension);
+            return SubtractWithSaturation(min, offset);
+        }
+
+        if (elasticPoint > max)
+        {
+            var offset = CalculateInverseOffset(elasticPoint - max, tension);
+            return AddWithSaturation(max, offset);
+        }
+
+        return double.IsNaN(elasticPoint) ? min : elasticPoint;
+    }
+
+    private static (double Min, double Max) GetOrderedBounds(double min, double max)
+    {
+        var minIsNaN = double.IsNaN(min);
+        var maxIsNaN = double.IsNaN(max);
+
+        if (minIsNaN && maxIsNaN)
+        {
+            return (0, 0);
+        }
+
+        if (minIsNaN)
+        {
+            min = max;
+        }
+
+        if (maxIsNaN)
+        {
+            max = min;
+        }
+
+        return min <= max ? (min, max) : (max, min);
     }
 
     private static double CalculateOffset(double distance, double tension)
     {
-
-        double elasticFactor = (distance * ReferenceRange) / (distance + ReferenceRange);
-
-        return elasticFactor * tension;
-    }
-    public static Vector3D GetOriginalPoint(Vector3D elasticPoint, Vector3D min, Vector3D max, double tension = Tension)
-    {
-        var originX = elasticPoint.X;
-        var originY = elasticPoint.Y;
-        var originZ = elasticPoint.Z;
-
-        if (elasticPoint.X < min.X)
+        if (distance <= 0 || tension <= 0 || double.IsNaN(distance) || double.IsNaN(tension))
         {
-            double resultOffset = min.X - elasticPoint.X;
-            originX = min.X - CalculateInverseOffset(resultOffset, tension);
-        }
-        else if (elasticPoint.X > max.X)
-        {
-            double resultOffset = elasticPoint.X - max.X;
-            originX = max.X + CalculateInverseOffset(resultOffset, tension);
+            return 0;
         }
 
-        if (elasticPoint.Y < min.Y)
+        if (double.IsPositiveInfinity(distance))
         {
-            double resultOffset = min.Y - elasticPoint.Y;
-            originY = min.Y - CalculateInverseOffset(resultOffset, tension);
-        }
-        else if (elasticPoint.Y > max.Y)
-        {
-            double resultOffset = elasticPoint.Y - max.Y;
-            originY = max.Y + CalculateInverseOffset(resultOffset, tension);
+            return ReferenceRange * tension;
         }
 
-        if (elasticPoint.Z < min.Z)
-        {
-            double resultOffset = min.Z - elasticPoint.Z;
-            originZ = min.Z - CalculateInverseOffset(resultOffset, tension);
-        }
-        else if (elasticPoint.Z > max.Z)
-        {
-            double resultOffset = elasticPoint.Z - max.Z;
-            originZ = max.Z + CalculateInverseOffset(resultOffset, tension);
-        }
-
-        return new Vector3D(originX, originY, originZ);
+        return (distance / (distance + ReferenceRange)) * ReferenceRange * tension;
     }
 
     private static double CalculateInverseOffset(double resultOffset, double tension)
     {
+        if (resultOffset <= 0 || tension <= 0 || double.IsNaN(resultOffset) || double.IsNaN(tension))
+        {
+            return 0;
+        }
+
         double limit = ReferenceRange * tension;
 
-        if (resultOffset >= limit)
+        if (limit <= 0 || double.IsNaN(limit) || double.IsPositiveInfinity(resultOffset) || resultOffset >= limit)
         {
             return double.MaxValue;
         }
-        return (resultOffset * ReferenceRange) / (limit - resultOffset);
+
+        var denominator = limit / resultOffset - 1.0;
+        if (denominator <= 0 || double.IsNaN(denominator))
+        {
+            return double.MaxValue;
+        }
+
+        var offset = ReferenceRange / denominator;
+        return double.IsNaN(offset) || double.IsInfinity(offset) ? double.MaxValue : offset;
+    }
+
+    private static double AddWithSaturation(double value, double offset)
+    {
+        var result = value + offset;
+        return double.IsNaN(result) || double.IsPositiveInfinity(result) ? double.MaxValue : result;
+    }
+
+    private static double SubtractWithSaturation(double value, double offset)
+    {
+        var result = value - offset;
+        return double.IsNaN(result) || double.IsNegativeInfinity(result) ? double.MinValue : result;
     }
 }

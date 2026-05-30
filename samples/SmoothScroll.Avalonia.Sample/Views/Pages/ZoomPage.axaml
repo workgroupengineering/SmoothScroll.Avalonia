@@ -17,7 +17,11 @@
             HorizontalScrollBarVisibility="Hidden"
             IsZoomEnabled="True"
             VerticalScrollBarVisibility="Hidden">
-            <Image Source="avares://SmoothScroll.Avalonia.Sample/Assets/Images/4074.bmp" Stretch="UniformToFill" />
+            <Grid>
+                <Slider ZIndex="1"/>
+                <Image Source="avares://SmoothScroll.Avalonia.Sample/Assets/Images/4074.bmp" Stretch="UniformToFill" />
+
+            </Grid>
         </controls:ScrollView>
         <Border
             Margin="24"
